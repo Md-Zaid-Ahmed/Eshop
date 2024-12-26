@@ -3,13 +3,11 @@ const { poolPromise, sql } = require("../config/database");
 const { generateToken } = require("../utils/jwt");
 const ShortUniqueId = require('short-unique-id');
 
-
 exports.signup = async (req, res) => {
-  let { name, username, password, secret , u_id} = req.body;
+  const { name, username, password, email, secret } = req.body;
   
-
   // Validate required fields
-  if (!name || !username || !password) {
+  if (!name || !username || !password || !email) {
     const response = {
       error: "Name, username, password name are required.",
     };
@@ -30,13 +28,12 @@ exports.signup = async (req, res) => {
     const hashedSecret = await bcrypt.hash(secret, 2);
     const pool = await poolPromise;
     const uid = new ShortUniqueId();
-    let uniqueId = uid(6);
-    u_id = "ycs8zq"
+    let uniqueId = "HjjEFa";
 
     // Check if email or username already exists
     const checkUserQuery = `
       SELECT COUNT(*) AS count 
-      FROM Admin 
+      FROM Admins 
       WHERE Username = @Username
     `;
     const checkResult = await pool
@@ -52,8 +49,8 @@ exports.signup = async (req, res) => {
     }
     // After successful insertion of the admin user:
         const insertQuery = `
-        INSERT INTO Admin (Name, Username, Password, Secret, Uid)
-        VALUES (@Name, @Username, @Password, @Secret, @Uid);
+        INSERT INTO Admins (Name, Username, Password,Email, Secret, Uid )
+        VALUES (@Name, @Username, @Password,@Email, @Secret, @Uid);
         SELECT SCOPE_IDENTITY() AS AdminID;  
     `;
 
@@ -62,14 +59,15 @@ exports.signup = async (req, res) => {
       .input("Name", sql.NVarChar, name)
       .input("Username", sql.NVarChar, username)
       .input("Password", sql.NVarChar, hashedPassword)
+      .input("Email", sql.NVarChar, email)
       .input("Secret", sql.NVarChar, hashedSecret)
-      .input("Uid", sql.NVarChar, u_id)
+      .input("Uid", sql.NVarChar, uniqueId)
       .query(insertQuery);
 
     const adminID = result.recordset[0].AdminID;
 
     // Generate a JWT token with the AdminID
-    const tokenPayload = { adminID,u_id };
+    const tokenPayload = { adminID,uniqueId };
     const token = generateToken(tokenPayload);
 
     // Construct the response
@@ -78,14 +76,15 @@ exports.signup = async (req, res) => {
       user: {
         name,
         username,
+        email,
         adminID,
-        u_id
+        uniqueId
       },
       token, // Include the token in the response
     };
 
     // Send the response back
-    return res.status(201).json(response);
+    return res.status(200).json(response);
   } catch (err) {
     console.error("Error signing up admin:", err);
     const response = {
@@ -95,3 +94,74 @@ exports.signup = async (req, res) => {
     return res.status(500).json(response);
   }
 };
+
+//Login Functionality
+
+exports.login = async (req, res) => {
+  const { identifier, password } = req.body;
+
+  // Validate required fields
+  if (!identifier || !password) {
+    const response = {
+      error: "Username/Email and password are required.",
+    };
+    return res.status(400).json(response);
+  }
+
+  try {
+    const pool = await poolPromise;
+
+    const checkUserQuery = `
+      SELECT AdminID, Name, Username, Email, Password, Uid 
+      FROM Admins 
+      WHERE Username = @Identifier OR Email = @Identifier
+    `;
+    const result = await pool
+      .request()
+      .input("Identifier", sql.NVarChar, identifier)
+      .query(checkUserQuery);
+
+    // If no user is found
+    if (result.recordset.length === 0) {
+      const response = {
+        error: "Invalid username/email or password.",
+      };
+      return res.status(401).json(response);
+    }
+
+    const user = result.recordset[0];
+
+    //Compare provided password with the stored hashed password
+    const isPasswordValid = await bcrypt.compare(password, user.Password);
+    if (!isPasswordValid) {
+      const response = {
+        error: "Invalid username/email or password.",
+      };
+      return res.status(401).json(response);
+    }
+
+    const tokenPayload = { adminID: user.AdminID, uniqueId: user.Uid };
+    const token = generateToken(tokenPayload);
+
+    const response = {
+      message: "Login successful.",
+      user: {
+        adminID: user.AdminID,
+        name: user.Name,
+        username: user.Username,
+        email: user.Email,
+      },
+      token,
+    };
+
+    return res.status(200).json(response);
+  } catch (err) {
+    console.error("Error logging in admin:", err);
+    const response = {
+      error: "Error logging in. Please try again later.",
+      details: err.message,
+    };
+    return res.status(500).json(response);
+  }
+};
+
