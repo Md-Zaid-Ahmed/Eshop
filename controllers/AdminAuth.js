@@ -4,12 +4,12 @@ const { generateToken } = require("../utils/jwt");
 const ShortUniqueId = require('short-unique-id');
 
 exports.signup = async (req, res) => {
-  const { name, username, password, email, secret } = req.body;
+  const { name, username, password, email, secret ,phonenumber } = req.body;
   
   // Validate required fields
-  if (!name || !username || !password || !email) {
+  if (!name || !username || !password || !email || !phonenumber || !secret) {
     const response = {
-      error: "Name, username, password name are required.",
+      error: "Name, username, password, PhoneNumber and secret are required.",
     };
     return res.status(400).json(response);
   }
@@ -28,7 +28,7 @@ exports.signup = async (req, res) => {
     const hashedSecret = await bcrypt.hash(secret, 2);
     const pool = await poolPromise;
     const uid = new ShortUniqueId();
-    let uniqueId = "HjjEFa";
+    let uniqueId = uid(6);
 
     // Check if email or username already exists
     const checkUserQuery = `
@@ -49,8 +49,8 @@ exports.signup = async (req, res) => {
     }
     // After successful insertion of the admin user:
         const insertQuery = `
-        INSERT INTO Admins (Name, Username, Password,Email, Secret, Uid )
-        VALUES (@Name, @Username, @Password,@Email, @Secret, @Uid);
+        INSERT INTO Admins (Name, Username, Password,Email, Secret, Uid ,PhoneNumber)
+        VALUES (@Name, @Username, @Password,@Email, @Secret, @Uid, @PhoneNumber);
         SELECT SCOPE_IDENTITY() AS AdminID;  
     `;
 
@@ -62,12 +62,13 @@ exports.signup = async (req, res) => {
       .input("Email", sql.NVarChar, email)
       .input("Secret", sql.NVarChar, hashedSecret)
       .input("Uid", sql.NVarChar, uniqueId)
+      .input("PhoneNumber", sql.NVarChar, phonenumber)
       .query(insertQuery);
 
     const adminID = result.recordset[0].AdminID;
 
     // Generate a JWT token with the AdminID
-    const tokenPayload = { adminID,uniqueId };
+    const tokenPayload = { username,adminID,uniqueId };
     const token = generateToken(tokenPayload);
 
     // Construct the response
@@ -130,6 +131,7 @@ exports.login = async (req, res) => {
     }
 
     const user = result.recordset[0];
+    console.log("user : " + JSON.stringify(user))
 
     //Compare provided password with the stored hashed password
     const isPasswordValid = await bcrypt.compare(password, user.Password);
@@ -140,7 +142,7 @@ exports.login = async (req, res) => {
       return res.status(401).json(response);
     }
 
-    const tokenPayload = { adminID: user.AdminID, uniqueId: user.Uid };
+    const tokenPayload = { userName : user.Username, adminID: user.AdminID, uniqueId: user.Uid };
     const token = generateToken(tokenPayload);
 
     const response = {
