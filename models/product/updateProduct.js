@@ -103,9 +103,9 @@ exports.updateProduct = [
       await pool
         .request()
         .input("ProductName", sql.VarChar, productName || null)
-        .input("SellingCost", sql.Decimal, sellingCost || null)
-        .input("ProductMargin", sql.Decimal, productMargin || null)
-        .input("MakingCost", sql.Decimal, makingCost || null)
+        .input("SellingCost", sql.Decimal(10, 2), sellingCost || null)
+        .input("ProductMargin", sql.Decimal(10, 2), productMargin || null)
+        .input("MakingCost", sql.Decimal(10, 2), makingCost || null)
         .input("ImageData", sql.NVarChar, imageData || null)
         .input("ProductID", sql.Int, productID)
         .query(updateProductQuery);
