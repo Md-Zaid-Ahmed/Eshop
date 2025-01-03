@@ -6,9 +6,8 @@ exports.updateProduct = [
 
   async (req, res) => {
     const { productID } = req.params;
-    const { productName, sellingCost, productMargin, makingCost, imageData } = req.body;
+    const { productName, sellingCost, productMargin, makingCost, imageData, categoryID } = req.body;
 
-    // Validate required fields
     if (!productID) {
       return res.status(400).json({
         error: "Product ID is required.",
@@ -55,35 +54,19 @@ exports.updateProduct = [
 
       const existingProduct = productResult.recordset[0];
 
-      // If no changes are made, return a 201 status
-      if (
-        (productName && productName === existingProduct.ProductName) &&
-        (sellingCost && sellingCost === existingProduct.SellingCost) &&
-        (productMargin && productMargin === existingProduct.ProductMargin) &&
-        (makingCost && makingCost === existingProduct.MakingCost) &&
-        (imageData && imageData === existingProduct.ImageData)
-      ) {
-        return res.status(201).json({
-          message: "No changes made to the product.",
-        });
-      }
-
-      // Check if the new product name already exists in the database
-      if (productName && productName !== existingProduct.ProductName) {
-        const duplicateCheckQuery = `
-          SELECT COUNT(*) AS count
-          FROM Product
-          WHERE ProductName = @ProductName AND ProductID != @ProductID
+      // If a new category ID is provided, verify that the category exists
+      if (categoryID && categoryID !== existingProduct.CategoryID) {
+        const checkCategoryQuery = `
+          SELECT * FROM Category WHERE CategoryID = @CategoryID
         `;
-        const duplicateCheckResult = await pool
+        const categoryResult = await pool
           .request()
-          .input("ProductName", sql.VarChar, productName)
-          .input("ProductID", sql.Int, productID)
-          .query(duplicateCheckQuery);
+          .input("CategoryID", sql.Int, categoryID)
+          .query(checkCategoryQuery);
 
-        if (duplicateCheckResult.recordset[0].count > 0) {
+        if (categoryResult.recordset.length === 0) {
           return res.status(400).json({
-            error: "Product name already exists. Please choose a different name.",
+            error: "The specified category does not exist.",
           });
         }
       }
@@ -92,11 +75,12 @@ exports.updateProduct = [
       const updateProductQuery = `
         UPDATE Product
         SET 
-          ProductName = ISNULL(@ProductName, ProductName),
-          SellingCost = ISNULL(@SellingCost, SellingCost),
-          ProductMargin = ISNULL(@ProductMargin, ProductMargin),
-          MakingCost = ISNULL(@MakingCost, MakingCost),
-          ImageData = ISNULL(@ImageData, ImageData),
+          ProductName = CASE WHEN @ProductName IS NOT NULL THEN @ProductName ELSE ProductName END,
+          SellingCost = CASE WHEN @SellingCost IS NOT NULL THEN @SellingCost ELSE SellingCost END,
+          ProductMargin = CASE WHEN @ProductMargin IS NOT NULL THEN @ProductMargin ELSE ProductMargin END,
+          MakingCost = CASE WHEN @MakingCost IS NOT NULL THEN @MakingCost ELSE MakingCost END,
+          ImageData = CASE WHEN @ImageData IS NOT NULL THEN @ImageData ELSE ImageData END,
+          CategoryID = CASE WHEN @CategoryID IS NOT NULL THEN @CategoryID ELSE CategoryID END,
           UpdatedAt = GETDATE()
         WHERE ProductID = @ProductID
       `;
@@ -107,10 +91,13 @@ exports.updateProduct = [
         .input("ProductMargin", sql.Decimal(10, 2), productMargin || null)
         .input("MakingCost", sql.Decimal(10, 2), makingCost || null)
         .input("ImageData", sql.NVarChar, imageData || null)
+        .input("CategoryID", sql.Int, categoryID || null)
         .input("ProductID", sql.Int, productID)
         .query(updateProductQuery);
 
       return res.status(200).json({
+        previousCategory: existingProduct.CategoryID,
+        updatedCategory: categoryID || existingProduct.CategoryID,
         previousName: existingProduct.ProductName,
         updatedName: productName || existingProduct.ProductName,
         message: "Product updated successfully.",
